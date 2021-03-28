@@ -3,9 +3,9 @@
 1 https://en.wikipedia.org/wiki/Ten-pin_bowling#Traditional_scoring
 2
 3 This API should include endpoints to:
-4 - Start a new game of bowling
+4 - Start a new game of bowling     /start
 5 - There only needs to be one active game at a time
-6 - Bowl one frame and return the result.
+6 - Bowl one frame and return the result.   /nextframe
 7 - The response should include:
 8 - The result of each roll (note that most frames can have either 1 or 2 rolls, but the final frame can have up to 3)
 9 - The result of the frame (a score of 0-9, a spare, or a strike)
@@ -15,7 +15,7 @@
 13 - If the first frame rolls were 3 and 5 and the second frame was a spare, the current score is 8
 14 - If the first frame was a spare and the second frame a strike, the current score is 0
 15 - If the first frame was a strike and the second frame rolls were 2 and 7, the current score is 28
-16 - Return an array of previous games, including the final score and the result of each roll.
+16 - Return an array of previous games, including the final score and the result of each roll.      /oldgames
 17
 18 All endpoints should return JSON.
 Ten-pin bowlingTen-pin bowling is a type of bowling in which a bowler rolls a bowling ball down a wood or synthetic lane toward ten pins positioned evenly in four rows in an equilateral triangle at the far end of the...en.wikipedia.org
