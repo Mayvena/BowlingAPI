@@ -10,7 +10,7 @@
 8 - The result of each roll (note that most frames can have either 1 or 2 rolls, but the final frame can have up to 3)
 9 - The result of the frame (a score of 0-9, a spare, or a strike)
 10 - The result should be randomly generated
-11 - Return the result of each roll of the active game as well as the current score
+11 - Return the result of each roll of the active game as well as the current score /game
 12 - Any outstanding strike/spare calculations should be ignored. For example:
 13 - If the first frame rolls were 3 and 5 and the second frame was a spare, the current score is 8
 14 - If the first frame was a spare and the second frame a strike, the current score is 0
@@ -18,4 +18,4 @@
 16 - Return an array of previous games, including the final score and the result of each roll.      /oldgames
 17
 18 All endpoints should return JSON.
-Ten-pin bowlingTen-pin bowling is a type of bowling in which a bowler rolls a bowling ball down a wood or synthetic lane toward ten pins positioned evenly in four rows in an equilateral triangle at the far end of the...en.wikipedia.org
+

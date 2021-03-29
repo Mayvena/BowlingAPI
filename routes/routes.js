@@ -8,10 +8,9 @@ const router = app => {
         
         // check if there's already a game in progress
         let query = 'SELECT COUNT(gameid) AS unfinishedGames FROM games WHERE is_finished = 0';
-        var result
+        var result;
         try {
             result = await queryDB(query);
-            
         } catch (e) {
             console.error('queryDB failed:', e);
         }
@@ -24,8 +23,8 @@ const router = app => {
             query = 'INSERT INTO games VALUES ()';
             result = await queryDB(query);
             console.log("Game inserted. Result: ", result);
-            response.status(201).send(`Game with ID ${result.insertId} created`);
-        };
+            response.status(201).send(`Game with ID ${result.insertId} started`);
+        }
     });
 
     app.get('/nextframe', async (request,response) => {
@@ -52,8 +51,21 @@ const router = app => {
         // add a frame
     });
 
+    app.get('/game', async (request,response) => {
+        // See active game so far
+
+        //TODO: add "score so far" to the object before sending it
+        pool.query('select * FROM frames WHERE gameid = (SELECT gameid FROM games WHERE is_finished = 0)', (error, result) => {
+            if (error) throw error;
+    
+            response.status(201).send(result);
+        });
+    });
+
     app.get('/oldgames', (request,response) => {
         // Fetch all finished games and their frames from DB
+
+        //TODO: format as array of games, each game should be an object, containing the frames and final scoring
         pool.query('select * FROM frames', (error, result) => {
             if (error) throw error;
     
@@ -102,7 +114,7 @@ async function addFrame(gameID){
 
     let pins = 10;
     let maxRolls = 2;
-    let rolls = [0,0,0];
+    let rolls = [];
 
     for (i = 0; i < maxRolls; i++){
         console.log("enter cycle, i = ", i)
@@ -128,25 +140,21 @@ async function addFrame(gameID){
         rolls[i] = result;
     }
 
-    console.log("rolls: ")
-    console.log(rolls)
-    console.log(rolls[0])
-    console.log(rolls[1])
-    console.log(rolls[2])
+    // old_score = await getScore(gameID,frame_number);
+    // console.log("old_score = ", old_score);
+    // old_rolls = await getRolls(gameID,frame_number);
+    // console.log("old_rolls = ", old_rolls);
+    
 
-    old_score = await getScore(gameID,frame_number);
-    console.log("old_score = ", old_score);
-    old_rolls = await getRolls(gameID,frame_number);
-    console.log("old_rolls = ", old_rolls);
-    score = calculateScore(frame_number, old_score, old_rolls, rolls);
-
-    let query = "INSERT INTO frames (gameid, frame_number, score, roll1, roll2, roll3) VALUES (" + gameID + "," + frame_number + "," + score + ",'" + rolls[0] + "','" + rolls[1] + "','" + rolls[2] + "');";
+    let query = "INSERT INTO frames (gameid, frame_number, roll1" + ((rolls[1] == undefined)?'':', roll2') + ((rolls[2] == undefined)?'':', roll3') + ") VALUES (" + gameID + "," + frame_number + ",'" + rolls[0] + "'" + ((rolls[1] == undefined)?'': ', "'+rolls[1]+'"') + ((rolls[2] == undefined)?'': ', "'+rolls[2]+'"') + ");";
 
     try {
         result = await queryDB(query);
     } catch (e) {
         console.error('queryDB failed:', e);
     }
+
+    score = calculateScore(gameID, frame_number, rolls);
 
     if (frame_number == 10){
         query = "UPDATE games SET is_finished = 1 WHERE gameid = " + gameID;
@@ -193,7 +201,7 @@ async function getFrameNumber(gameID){
     }
 
     let frameNum = result[0]['frame_number'];
-    console.log("fetched frameNum: ", frameNum )
+    console.log("fetched frameNum: ", frameNum );
 
     if (frameNum == undefined){
         frameNum = 1;
@@ -207,6 +215,7 @@ async function getFrameNumber(gameID){
 }
 
 async function getScore(gameID,frame_number){
+    // fetch score for previous frame
     var result;
     let score = 0;
     let query = 'SELECT score FROM frames WHERE gameid = ' + gameID + ' AND frame_number = ' + (frame_number - 1);
@@ -244,31 +253,97 @@ async function getRolls(gameID,frame_number){
     }
 }
 
-function calculateScore(frame_number, old_score, old_rolls, new_rolls){
-    console.log("calculateScore() called")
-    console.log("frame: ", frame_number);
-    console.log("oldscore: ", old_score);
-    console.log("old_rolls: ", old_rolls);
-    console.log("new_rolls: ", new_rolls);
+async function calculateScore(gameID, frame_number, rolls){
+    // console.log("calculateScore() called")
+    // console.log("gameID: ", gameID);
+    // console.log("frame: ", frame_number);
+    // console.log("rolls:", rolls);
 
-    if (old_score == undefined){
-        return 0;
-    } else {
-        let new_score = old_score;
-        if (old_rolls[0] == "X"){
+    // if (old_score == undefined){
+    //     old_score = 0;
+
+    // } else {
+    //     let new_score = old_score;
+    //     if (old_rolls[0] == "X"){
             
-        } else if (old_rolls[1] == "/"){
+    //     } else if (old_rolls[1] == "/"){
 
-        } else {
+    //     } else {
 
-        }
+    //     }
+    // }
+    // return 0;
+
+    // check if there's a strike or a spare in frame_number-1
+    // check if there's a strike in frame_number -2
+    // get score so far
+    // calculate bonuses
+    // add bonuses and current rolls to score
+
+    //let query = 
+
+
+    // if prev frame == X, add roll1 and roll2 to prev frame
+    // if prev frame == X and curr frame = X do nothing
+    // if prev frame == X and prev prev frame == X, add roll1 to prev frame
+    // if prev frame roll2 == / add roll1 to prev frame
+    // once prev frame score is calculated, add current frame score to get current total score
+    var currentScore = 0;
+    var finalScore = 0;
+    var bonusPrev = 0;
+    var bonusDoublePrev = 0;
+    var result;
+    
+    if (rolls[0] == "X" || rolls[1] == "/"){
+        currentScore = 0;
+    } else {
+        currentScore = rolls[0] + rolls[1];
     }
-    return 0;
+
+
+    if (frame_number > 0){
+        // if prev frame == X, add roll1 and roll2 to prev frame
+        // if prev frame == X and curr frame = X do nothing
+
+        // use as example: https://bowlinggenius.com/ and https://www.wikihow.com/Score-Bowling
+        
+        let query = "SELECT COUNT(roll1) as strikes FROM frames WHERE roll1 = 'X' AND gameid = "+gameID+" AND frame_number >= " + (frame_number-2);
+        try {
+            result = await queryDB(query);
+        } catch (e) {
+            console.error('queryDB failed:', e);
+        }
+
+        switch (result[0]['strikes']){
+            case 0: {
+                finalScore = currentScore;
+            }
+            break;
+            case 1: {
+                bonusPrev = currentScore;
+            }
+            break;
+            case 2: {}
+            break;
+        }
+
+        
+        if (frame_number > 1){
+            // if prev frame == X and prev prev frame == X, add roll1 to prev frame
+        }
+
+        // if prev frame roll2 == / add roll1 to prev frame
+        
+    } else {
+
+    }
 }
 
 function newRoll(remainingPins,rollNr){
     // return a random number of pins between 0 and remainingPins
     let droppedPins = Math.round(Math.random()*remainingPins);
+    console.log("dropped pins: ", droppedPins);
+    console.log("remaining pins: ", remainingPins);
     if (droppedPins == remainingPins){
         if (rollNr == 0){
             return "X";
