@@ -6,7 +6,7 @@ const config = {
     password: "",
     database: "bowlingapi",
     //database: "testapi",
-    port: 3306
+    port: 3308
 };
 
 const pool = mysql.createPool(config);

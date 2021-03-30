@@ -22,13 +22,12 @@ const router = app => {
         } else {
             query = 'INSERT INTO games VALUES ()';
             result = await queryDB(query);
-            console.log("Game inserted. Result: ", result);
             response.status(201).send(`Game with ID ${result.insertId} started`);
         }
     });
 
     app.get('/nextframe', async (request,response) => {
-        // Adding a new frame to the current game
+        // Add a new frame to the current game
 
         // Find the ID of the game in progress
         var result;
@@ -41,61 +40,68 @@ const router = app => {
         
         let gameID = result[0]['gameid'];
 
+        // Create the new frame:
         result = await addFrame(gameID);
-
-        console.log("result, returned from addFrame():")
-        console.log(result);
     
         response.status(201).send(result);
-
-        // add a frame
     });
 
     app.get('/game', async (request,response) => {
         // See active game so far
 
-        //TODO: add "score so far" to the object before sending it
-        pool.query('select * FROM frames WHERE gameid = (SELECT gameid FROM games WHERE is_finished = 0)', (error, result) => {
-            if (error) throw error;
-    
-            response.status(201).send(result);
-        });
+            let query = 'SELECT gameid, interim AS InterimScore FROM games WHERE is_finished = 0';
+            try {
+                var result = await queryDB(query);   
+            } catch (e) {
+                console.error('queryDB failed:', e);
+            }
+
+            query = 'SELECT frame_number, roll1, roll2, roll3 FROM frames WHERE gameid = ' + result[0].gameid;
+            try {
+                var frameResult = await queryDB(query);   
+            } catch (e) {
+                console.error('queryDB failed:', e);
+            }
+
+            var game = {};
+            game.gamedata = result[0];
+            game.frames = frameResult;
+
+            response.status(201).send(game);
+
     });
 
-    app.get('/oldgames', (request,response) => {
+    app.get('/oldgames', async (request,response) => {
         // Fetch all finished games and their frames from DB
 
-        //TODO: format as array of games, each game should be an object, containing the frames and final scoring
-        pool.query('select * FROM frames', (error, result) => {
-            if (error) throw error;
-    
-            response.status(201).send(result);
-        });
-    });
-
-    app.get('/oldgames/:id', (request,response) => {
-        // Fetch data for specific game and its frames
-    });
-
-    app.get('/start/:num', (request,response) => {
-        // Generate a specified number of games with all their frames
-
-        const gameCount = request.params.num;
-
-        for (var i = 0; i < gameCount; i++ ){
-            // generate a new game
-
-            // generate frames for the new game
-
-            // get the ID of the new game
-
-            for (var i = 1; i <= 10; i++ ){
-
-            }
+        let query = 'SELECT gameid, score FROM games';
+        try {
+            var result = await queryDB(query);   
+        } catch (e) {
+            console.error('queryDB failed:', e);
         }
 
+        var games = [];
+        for (let i = 0; i < result.length; i++){
+
+            let query = "SELECT frame_number, roll1, roll2, roll3, score FROM frames WHERE gameid = " + result[i].gameid;
+            try {
+                var resultFrames = await queryDB(query);   
+            } catch (e) {
+                console.error('queryDB failed:', e);
+            }
+
+            games[i] = {}
+            games[i].gameid = result[i].gameid;
+            games[i].score = result[i].score;
+            games[i].frames = resultFrames;
+ 
+        }
+        
+        response.status(201).send(games);
 
     });
+
 }
 
 module.exports = router;
@@ -107,46 +113,49 @@ async function addFrame(gameID){
     // add a record to DB 
     // if last frame in game, set "finished" flag to 1
 
-    console.log("adding frame to " + gameID);
-
     frame_number = await getFrameNumber(gameID);
-    console.log("frame_number = ", frame_number);
 
     let pins = 10;
     let maxRolls = 2;
     let rolls = [];
 
     for (i = 0; i < maxRolls; i++){
-        console.log("enter cycle, i = ", i)
-        console.log("current pins: ", pins)
-        let result = newRoll(pins,i);
-
-        console.log("result = ", result)
-
-        if(result == "X"){
-            if (frame_number < 10){
-                maxRolls--;
-            } else {
-                maxRolls++;
-            }
-        } else if (result == "/"){
-            maxRolls--;
-        }
+        let result = newRoll(frame_number,pins,i);
 
         if (!isNaN(result)){
             pins -= result;
         }
 
+        if(result == "X"){
+            if (frame_number < 10){
+                maxRolls--;
+            } else {
+                if ( i < 3){
+                    maxRolls++;
+                    pins = 10;
+                } else {
+                    break;
+                }
+                
+            }
+        } else if (result == "/"){
+            if (frame_number < 10){
+                maxRolls--;
+            } else {
+                if (i < 2){
+                    maxRolls++;
+                    pins = 10;
+                }
+                
+            }
+            
+        }
         rolls[i] = result;
     }
 
-    // old_score = await getScore(gameID,frame_number);
-    // console.log("old_score = ", old_score);
-    // old_rolls = await getRolls(gameID,frame_number);
-    // console.log("old_rolls = ", old_rolls);
-    
+    score = await calculateScore(gameID, frame_number, rolls);
 
-    let query = "INSERT INTO frames (gameid, frame_number, roll1" + ((rolls[1] == undefined)?'':', roll2') + ((rolls[2] == undefined)?'':', roll3') + ") VALUES (" + gameID + "," + frame_number + ",'" + rolls[0] + "'" + ((rolls[1] == undefined)?'': ', "'+rolls[1]+'"') + ((rolls[2] == undefined)?'': ', "'+rolls[2]+'"') + ");";
+    let query = "INSERT INTO frames (gameid, frame_number, score, roll1" + ((rolls[1] == undefined)?'':', roll2') + ((rolls[2] == undefined)?'':', roll3') + ") VALUES (" + gameID + "," + frame_number + "," + score + ",'" + rolls[0] + "'" + ((rolls[1] == undefined)?'': ', "'+rolls[1]+'"') + ((rolls[2] == undefined)?'': ', "'+rolls[2]+'"') + ");";
 
     try {
         result = await queryDB(query);
@@ -154,16 +163,14 @@ async function addFrame(gameID){
         console.error('queryDB failed:', e);
     }
 
-    score = calculateScore(gameID, frame_number, rolls);
-
     if (frame_number == 10){
-        query = "UPDATE games SET is_finished = 1 WHERE gameid = " + gameID;
+
+        query = "UPDATE games SET is_finished = 1, score = (SELECT SUM(score) FROM frames WHERE gameid = " + gameID + ") WHERE gameid = " + gameID;
         try {
             result = await queryDB(query);   
         } catch (e) {
             console.error('queryDB failed:', e);
         }
-    
     }
 
     query = "SELECT * FROM frames WHERE gameid = " + gameID + " AND frame_number = " + frame_number;
@@ -179,7 +186,7 @@ async function addFrame(gameID){
 }
  
 async function queryDB(query) {
-    console.log("sending query to DB: ", query)
+    console.log("Executing query: ", query)
 	return new Promise((resolve, reject) => {
 		pool.query(query, (error, results, fields) => {
 			if (error) {
@@ -201,7 +208,6 @@ async function getFrameNumber(gameID){
     }
 
     let frameNum = result[0]['frame_number'];
-    console.log("fetched frameNum: ", frameNum );
 
     if (frameNum == undefined){
         frameNum = 1;
@@ -209,148 +215,178 @@ async function getFrameNumber(gameID){
         frameNum += 1;
     }
 
-    console.log("adjusted frameNum: ", frameNum )
-
     return frameNum;
 }
 
-async function getScore(gameID,frame_number){
-    // fetch score for previous frame
-    var result;
-    let score = 0;
-    let query = 'SELECT score FROM frames WHERE gameid = ' + gameID + ' AND frame_number = ' + (frame_number - 1);
-    if (frame_number > 1){
-        try {
-            result = await queryDB(query);
-            
-        } catch (e) {
-            console.error('queryDB failed:', e);
-        }
-        
-        score = result[0]['score'];
-
-        return score;
-    }
-}
-
-async function getRolls(gameID,frame_number){
-    var result;
-    let rolls = [];
-    let query = 'SELECT roll1, roll2, roll3 FROM frames WHERE gameid = ' + gameID + ' and frame_number = ' + (frame_number - 1);
-    if (frame_number > 1){
-        try {
-            result = await queryDB(query);
-            
-        } catch (e) {
-            console.error('queryDB failed:', e);
-        }
-
-        rolls[0] = result[0]['roll1'];
-        rolls[1] = result[0]['roll2'];
-        rolls[2] = result[0]['roll3'];
-
-        return rolls;
-    }
-}
-
 async function calculateScore(gameID, frame_number, rolls){
-    // console.log("calculateScore() called")
-    // console.log("gameID: ", gameID);
-    // console.log("frame: ", frame_number);
-    // console.log("rolls:", rolls);
+    // Calculates scores and adds bonus points to previous frames
+    // use as example: https://bowlinggenius.com/ and https://www.wikihow.com/Score-Bowling
 
-    // if (old_score == undefined){
-    //     old_score = 0;
-
-    // } else {
-    //     let new_score = old_score;
-    //     if (old_rolls[0] == "X"){
-            
-    //     } else if (old_rolls[1] == "/"){
-
-    //     } else {
-
-    //     }
-    // }
-    // return 0;
-
-    // check if there's a strike or a spare in frame_number-1
-    // check if there's a strike in frame_number -2
-    // get score so far
-    // calculate bonuses
-    // add bonuses and current rolls to score
-
-    //let query = 
-
-
-    // if prev frame == X, add roll1 and roll2 to prev frame
-    // if prev frame == X and curr frame = X do nothing
-    // if prev frame == X and prev prev frame == X, add roll1 to prev frame
-    // if prev frame roll2 == / add roll1 to prev frame
-    // once prev frame score is calculated, add current frame score to get current total score
     var currentScore = 0;
-    var finalScore = 0;
     var bonusPrev = 0;
     var bonusDoublePrev = 0;
     var result;
     
     if (rolls[0] == "X" || rolls[1] == "/"){
-        currentScore = 0;
-    } else {
+        currentScore = 10;
+    } else if (frame_number != 10) {
         currentScore = rolls[0] + rolls[1];
+        console.log("currentScore = rolls[0] + rolls[1] = ", currentScore)
     }
 
-
     if (frame_number > 0){
-        // if prev frame == X, add roll1 and roll2 to prev frame
-        // if prev frame == X and curr frame = X do nothing
 
-        // use as example: https://bowlinggenius.com/ and https://www.wikihow.com/Score-Bowling
-        
-        let query = "SELECT COUNT(roll1) as strikes FROM frames WHERE roll1 = 'X' AND gameid = "+gameID+" AND frame_number >= " + (frame_number-2);
+        if (frame_number > 1){
+            var query = "SELECT roll1 FROM frames WHERE gameid = " + gameID + " AND frame_number = " + (frame_number -1);
+            try {
+                result = await queryDB(query);
+            } catch (e) {
+                console.error('queryDB failed:', e);
+            }
+            var prevX = result[0]['roll1'];
+
+            if (prevX == 'X'){
+                if(rolls[0] == 'X'){
+                    bonusPrev = 10;
+                } else {
+                    bonusPrev = currentScore;
+                }  
+            }
+        }
+
+        if (frame_number > 2){
+            query = "SELECT roll1 FROM frames WHERE gameid = " + gameID + " AND frame_number = " + (frame_number -2);
+            try {
+                result = await queryDB(query);
+            } catch (e) {
+                console.error('queryDB failed:', e);
+            }
+            var prevPrevX = result[0]['roll1'];
+    
+            if (prevPrevX == 'X'){
+                if (prevX == 'X'){
+                    if(rolls[0] == 'X'){
+                        bonusDoublePrev = 10;
+                    } else {
+                        bonusDoublePrev += rolls[0];
+                    }    
+                } 
+            } 
+        }
+
+        query = "SELECT COUNT(roll2) as spares FROM frames WHERE roll2 = '/' AND gameid = "+gameID+" AND frame_number = " + (frame_number-1);
         try {
             result = await queryDB(query);
         } catch (e) {
             console.error('queryDB failed:', e);
         }
 
-        switch (result[0]['strikes']){
-            case 0: {
-                finalScore = currentScore;
+        if (result[0]['spares'] > 0){
+            if (rolls[0] == 'X'){
+                bonusPrev = 10;
+            } else {
+                bonusPrev += rolls[0];
             }
-            break;
-            case 1: {
-                bonusPrev = currentScore;
-            }
-            break;
-            case 2: {}
-            break;
         }
 
+        if (frame_number == 10){
+            if(rolls[0] == 'X'){
+                currentScore = 10;
+                if (rolls[1] == 'X'){
+                    currentScore += 10;
+                    if (rolls[2] == 'X'){
+                        currentScore += 10;
+                    } else {
+                        currentScore += rolls[2];
+                    }
+                } else {
+                    currentScore += rolls[1];
+                    if (rolls[2] == '/'){
+                        currentScore = 20;
+                    } else {
+                        currentScore += rolls[2];
+                    }
+                }
+            } else {
+                currentScore = rolls[0];
+                if (rolls[1] == '/'){
+                    currentScore += (10-rolls[0]);
+                    if (rolls[2] == 'X'){
+                        currentScore += 10;
+                    } else {
+                        currentScore += rolls[2];
+                    }
+                } else {
+                    currentScore += rolls[1];
+                }
+            }
+        }
         
-        if (frame_number > 1){
-            // if prev frame == X and prev prev frame == X, add roll1 to prev frame
+    } 
+
+    if(!rolls.includes('X') && !rolls.includes('/')){
+        await updateInterim(currentScore,gameID);
+    }
+
+    if(bonusPrev != 0){
+        query = "UPDATE frames AS a INNER JOIN frames AS b ON a.id = b.id SET a.score = (b.score + " +bonusPrev+ ") WHERE a.gameid = " + gameID +" AND a.frame_number = " + (frame_number-1);
+
+        try {
+            result = await queryDB(query);
+        } catch (e) {
+            console.error('queryDB failed:', e);
         }
 
-        // if prev frame roll2 == / add roll1 to prev frame
-        
-    } else {
+        await updateInterim((bonusPrev + 10),gameID)
+    }
 
+    if(bonusDoublePrev != 0){
+        query = "UPDATE frames AS a INNER JOIN frames AS b ON a.id = b.id SET a.score = (b.score + " + bonusDoublePrev + ") WHERE a.gameid = " + gameID +" AND a.frame_number = " + (frame_number-2);
+        try {
+            result = await queryDB(query);
+        } catch (e) {
+            console.error('queryDB failed:', e);
+        }
+        await updateInterim((bonusDoublePrev + 10),gameID)
+    }
+
+    return currentScore;
+}
+
+async function updateInterim(addition,gameID){
+    let query = "UPDATE games AS a INNER JOIN games AS b on a.gameid = b.gameid SET a.interim = (b.interim + " + addition + ") WHERE a.gameid = " + gameID;
+    try {
+        result = await queryDB(query);
+    } catch (e) {
+        console.error('queryDB failed:', e);
     }
 }
 
-function newRoll(remainingPins,rollNr){
+function newRoll(frame_number, remainingPins,rollNr){
     // return a random number of pins between 0 and remainingPins
+    
     let droppedPins = Math.round(Math.random()*remainingPins);
-    console.log("dropped pins: ", droppedPins);
-    console.log("remaining pins: ", remainingPins);
-    if (droppedPins == remainingPins){
-        if (rollNr == 0){
-            return "X";
+    
+    if (frame_number != 10){
+        if (droppedPins == remainingPins){
+            if (rollNr == 0){
+                return "X";
+            } else {
+                return "/";
+            } 
         } else {
-            return "/";
+            return droppedPins;
         }
     } else {
-        return droppedPins;
+        if(droppedPins == remainingPins){
+            if (droppedPins == 10){
+                return "X";
+            } else {
+                return "/";
+            }
+        } else {
+            return droppedPins;
+        }
     }
+
 }
